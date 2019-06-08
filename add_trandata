@@ -1,0 +1,129 @@
+#!/bin/bash
+
+#Monta DBLogin + add trandata (ALLCOLS include)
+#Parametro $1 = Nome do Extrator para filtrar dblogin
+        if [ -f ~/.bash_profile ]; then
+            source ~/.bash_profile
+            if [ ! -z "${?:resource/UCDSIC_GOLDENGATE_SETDB}" ]; then 
+                #Executando SETDB
+                #setdb ${?:resource/UCDSIC_GOLDENGATE_SETDB}
+                . /oracle/tools/profile_db.sh ${?:resource/UCDSIC_GOLDENGATE_SETDB}
+                    echo "DEBUG:        ORACLE_HOME= "$ORACLE_HOME;
+                    echo "DEBUG:        ORACLE_SID= "$ORACLE_SID;
+            fi
+        elif [ -f ~/.profile ]; then
+            . ~/.profile
+        else 
+            echo "Plataforma não identificada - Não é AIX - Não é Linux";
+            exit 1;
+        fi    
+        
+cd ${p:resource/work.dir}${p:component.name}/
+#unzip ${p:component.name}-${p:version.name}.zip
+        
+cd ${p:resource/UCDSIC_GOLDENGATE_HOME}
+echo ; echo ;
+echo "############################################################################################################################################"
+echo "Inicializando processo de deploy no GoldenGate";
+echo "            Componente: ${p:component.name}"
+echo "            Version: "${p:version.name};
+echo "";
+echo "            GGATE HOME = "${p:resource/UCDSIC_GOLDENGATE_HOME}
+echo "            HOSTNAME = `hostname`";
+echo "            ORACLE_HOME= "$ORACLE_HOME;
+echo "            ORACLE_SID= "$ORACLE_SID;
+
+GG_OUT=ggs.out;                             # -> Arquivo temporario de saida   -> removido ao final
+GG_ADD_TRANDATA=add_trandata_udeploy.obey;  # -> Arquivo temporario add_tranda -> removido ao final
+ARQUIVO_DE_NOVAS_TABELAS_SVN=novas_tabelas.add;
+
+    if [ -f ${p:resource/UCDSIC_GOLDENGATE_HOME}/dirprm/${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR} ]; then
+        DBLOGIN=`cat ${p:resource/UCDSIC_GOLDENGATE_HOME}/dirprm/${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR} |grep -i userid |grep -v "\-\-"`;
+        DBLOGIN_PDB=`echo $DBLOGIN|grep -i userid|grep -i c##`;
+        
+        if [ ! -z "$DBLOGIN_PDB" ]; then 
+            echo "--------------- BANCO Pluglable ---------------"
+            echo "Procurando no PRM o parametro SOURCECATALOG"    
+            SOURCECATALOG=`cat ${p:resource/UCDSIC_GOLDENGATE_HOME}/dirprm/${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR} |grep -i "SOURCECATALOG"|awk {' print $2'}`;
+            echo;echo;echo;
+            
+            if [ ! -z "$SOURCECATALOG" ]; then
+                ################################################################################
+                ##########   Corrigir bug de arquivo sourcecatalog Plugable Database  ########## 
+                SOURCECATALOG_TOTAL=`echo $SOURCECATALOG|wc -w`;
+                
+                echo;echo;echo;
+                echo "Numero de catalogos identificados no extrator= "$SOURCECATALOG_TOTAL "SOURCECATALOG= "$SOURCECATALOG
+                echo;echo;echo;
+                
+                 if [ "$SOURCECATALOG_TOTAL" -gt "1" ]; then
+                   ##########   Tem DOIS SOURCECATALOG no Extrator   ########## 
+                    SOURCECATALOG_2=`echo ${p:component.name}|awk -F"-" {' print $3 '}`
+                    DBLOGIN=`echo $DBLOGIN|sed s/ggate/ggate@$SOURCECATALOG_2/g`;
+                 else 
+                    DBLOGIN=`echo $DBLOGIN|sed s/ggate/ggate@$SOURCECATALOG/g`;
+                 fi 
+                ################################################################################
+            fi
+        fi
+        if [ -z "$DBLOGIN" ] && [ -z "$DBLOGIN_PDB" ]; then
+                               echo dentro IF $DBLOGIN
+                echo "Não foi possivel encontrar DBLOGIN no extrator"
+                exit 1;
+        else
+                
+                echo "               -> Adicionando ao arquivo de OBEY o DBLOGIN";
+                
+                if [ -f ${p:resource/work.dir}${p:component.name}/novas_tabelas.add ]; then
+                    #################################################################
+                    #Corrigir bug de arquivo sem ultima linha
+                    echo "" >> ${p:resource/work.dir}${p:component.name}/novas_tabelas.add
+                    #################################################################
+                  
+                    echo "dblogin "$DBLOGIN > add_trandata_udeploy.obey;
+                    #sed -e '$a\' ${p:resource/work.dir}${p:component.name}/novas_tabelas.add|sed -e '/^[[:space:]]*$/d' 
+                    sed -e '$a\' ${p:resource/work.dir}${p:component.name}/novas_tabelas.add|sed -e '/^[[:space:]]*$/d'| while read line;
+                    do
+                        echo "               -> Adicionando ao arquivo de OBEY: " $line;
+                        echo "add trandata $line allcols" >> add_trandata_udeploy.obey;
+                    done
+                else
+                    echo "Arquivo $ARQUIVO_DE_NOVAS_TABELAS_SVN não encontrado";
+                        
+                    echo "NÃO FOI ADICIONADO TRANDATA"
+                    exit 0;
+                fi
+                
+                if [ -f add_trandata_udeploy.obey ] && [ -f ggsci ]; then
+                        
+                        cat $GG_ADD_TRANDATA|sed -e "s/\^M//"|sed -e '/^[[:space:]]*$/d' > $GG_ADD_TRANDATA.tmp && mv $GG_ADD_TRANDATA.tmp $GG_ADD_TRANDATA;
+                        
+                        echo "                   -> Executando add trandata na lista de tabelas baixadas do SVN"; echo; 
+                        
+                        ${p:resource/UCDSIC_GOLDENGATE_HOME}/./ggsci paramfile $GG_ADD_TRANDATA > $GG_OUT
+                            if [ $? == 0 ]; then 
+                                cat $GG_OUT|egrep "ORA-00054: resource busy and acquire with NOWAIT" > /dev/null;
+                                    if [ $? == 1 ]; then
+                                       echo ; echo ;
+                                       cat  $GG_OUT;
+                                       echo ; echo ;
+                                       echo "SUCESSO - FIM - Processo executado com sucesso"; 
+                                       exit 0;
+                                    else
+                                        echo ; echo ;
+                                        echo "---->> Erro durante a execução do add trandata - ORA-00054: resource busy and acquire with NOWAIT"; echo ; echo ;
+                                        cat  $GG_OUT;
+                                        #exit 1 ;
+                                     fi
+                                else
+                                    echo ; echo ;
+                                    echo "---->> Erro ao acessar o binário GGSCI>"; echo ; echo ;
+                                    exit 1 ;
+                            fi
+                fi
+        fi
+else
+        echo ; echo ;
+        echo "---->> PRM ${p:resource/UCDSIC_GOLDENGATE_HOME}/dirprm/${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR} não existe";
+        exit 1 ;
+fi
