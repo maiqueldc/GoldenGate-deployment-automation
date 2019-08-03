@@ -1,0 +1,75 @@
+#!/bin/bash
+        if [ -f ~/.bash_profile ]; then
+            source ~/.bash_profile
+            if [ ! -z "${?:resource/UCDSIC_GOLDENGATE_SETDB}" ]; then 
+                #Executando SETDB
+                #setdb ${?:resource/UCDSIC_GOLDENGATE_SETDB}
+                . /oracle/tools/profile_db.sh ${?:resource/UCDSIC_GOLDENGATE_SETDB}
+                echo "DEBUG:        Sistema Operacional Linux";
+            fi
+        elif [ -f ~/.profile ]; then
+            . ~/.profile
+            echo "DEBUG:        Sistema Operacional AIX";
+        else 
+            echo "Plataforma não identificada - Não é AIX - Não é Linux";
+            exit 1;
+        fi
+        echo "DEBUG:        ORACLE_HOME= "$ORACLE_HOME;
+        echo "DEBUG:        ORACLE_SID= "$ORACLE_SID
+        echo "DEBUG:        LD_LIBRARY_PATH= "$LD_LIBRARY_PATH;
+        echo "DEBUG:        LIBPATH= "$LIBPATH;
+
+ echo 0 > count.out
+ echo 0 > deploy.out
+
+cd ${p:resource/work.dir}${p:component.name}/
+        
+cd ${p:resource/UCDSIC_GOLDENGATE_HOME}
+echo ; echo ;
+echo "############################################################################################################################################"
+echo "Inicializando processo de deploy no GoldenGate";
+echo "            Componente: ${p:component.name}"
+echo "            Version: "${p:version.name};
+echo "";
+echo "            GGATE HOME = "${p:resource/UCDSIC_GOLDENGATE_HOME}
+echo "            HOSTNAME = `hostname`";
+
+
+ if [ ! -z "${?:resource/UCDSIC_GOLDENGATE_REPLICATS}" ]; then 
+
+    echo ${?:resource/UCDSIC_GOLDENGATE_REPLICATS}|tr , '\n'|while read line; do
+
+            ls -lart ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc > /dev/null 2>&1
+            ret_ls=$?; # Recebe o return code do ultimo comando e valida se o PRM existe.
+                if [ $ret_ls == 0 ]; then 
+                    echo "   [ SUCESSO ]       Executando deploy arquivo    --->  "${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc
+                    tr -d '\r' < ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc > ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc.tmp && mv ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc.tmp ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc
+                    #################################################################
+                    #Corrigir bug de arquivo sem ultima linha
+                    echo "" >> ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc
+                    #################################################################
+                    
+                    echo $((`cat deploy.out`+1)) > deploy.out;
+                cp ${p:resource/work.dir}${p:component.name}/mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc ${p:resource/UCDSIC_GOLDENGATE_HOME}/dirmac/
+                else 
+                                echo "   [ ALERTA ]         Não foi encontrada nova versão para: "mapeamentos_tabelas_GoldenGate-$line*_${p:application.name}.inc; 
+                fi
+        echo $((`cat count.out`+1)) > count.out;
+
+    done
+    echo;echo;echo;
+    echo "Total de replicats do ambiente cadastrados "`cat count.out`;
+    echo "Total de replicats com novo deploy "`cat deploy.out`;
+    
+    if [ "`cat count.out`" == 0 ]; then
+        echo "Processo em falha de deploy - Não foram encontrados arquivos de replicat - Rever lista de replicats na variável UCDSIC_GOLDENGATE_REPLICATS";
+        exit 1;
+    fi
+ else 
+    echo "Erro: Variável de uDeploy --->>>>   UCDSIC_GOLDENGATE_REPLICATS  <<<<---    é vazio"
+    
+ fi
+echo "############################################################################################################################################"
+ 
+ 
+rm deploy.out count.out
