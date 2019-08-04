@@ -1,0 +1,56 @@
+echo Iniciando Script
+
+SET GG_ADD_TRANDATA=add_trandata_udeploy.obey
+SET ARQUIVO_DE_NOVAS_TABELAS_SVN=novas_tabelas.add
+SET GG_OUT=ggs.out
+SET CYGWIN_BIN=C:\cygwin64\bin\bash.exe
+
+echo Definindo variaveis 
+
+cd ${p:resource/UCDSIC_GOLDENGATE_HOME}\dirprm
+
+copy "${p:resource/work.dir}${p:component.name}\novas_tabelas.add" "${p:resource/UCDSIC_GOLDENGATE_HOME}\novas_tabelas.add"
+
+if exist %CYGWIN_BIN% (
+
+    if exist ${p:resource/UCDSIC_GOLDENGATE_HOME}\dirprm\${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR} (
+      
+        echo Arquivo  ${p:resource/UCDSIC_GOLDENGATE_HOME}\dirprm\${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR} existe - Iniciando deploy
+        
+        if exist ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggsci.exe (
+           echo "Sucesso ao buscar GGSCI"  
+           
+           %CYGWIN_BIN% --login -i -c "echo -n ""dblogin ""; cat ${p:resource/UCDSIC_GOLDENGATE_HOME_CYGWIN}/dirprm/${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR}|grep -i userid |grep -v '\-\-'" > ${p:resource/UCDSIC_GOLDENGATE_HOME}\add_trandata_udeploy.obey
+           %CYGWIN_BIN% --login -i -c "cat ${p:resource/UCDSIC_GOLDENGATE_HOME_CYGWIN}/novas_tabelas.add|while read line; do echo add trandata $line; done" >> ${p:resource/UCDSIC_GOLDENGATE_HOME}\add_trandata_udeploy.obey
+           echo obey ${p:resource/UCDSIC_GOLDENGATE_HOME}\add_trandata_udeploy.obey | ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggsci.exe > ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggs.out
+           
+           %CYGWIN_BIN% --login -i -c "cat ${p:resource/UCDSIC_GOLDENGATE_HOME_CYGWIN}/ggs.out"
+           
+          rem find /c "ERROR: Not logged into database" ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggs.out && ECHO "Not connect to the database" && exit 1
+          find /c "ERROR: Not logged into database" ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggs.out && echo ERROR: Not logged into database > ${p:resource/UCDSIC_GOLDENGATE_HOME}\error_deploy.txt
+            
+          find /c "ERROR: No tables found matching" ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggs.out  && echo ERROR: No tables found matching > ${p:resource/UCDSIC_GOLDENGATE_HOME}\error_deploy.txt
+          
+          if exist ${p:resource/UCDSIC_GOLDENGATE_HOME}\error_deploy.txt (
+              echo Falha no deploy
+              echo
+              type ${p:resource/UCDSIC_GOLDENGATE_HOME}\error_deploy.txt
+              del h:\GGS.12.3.0_MSSQL_64bit_CDC\error_deploy.txt 
+              echo
+              echo
+              exit 1
+          ) else ( echo Deploy com sucesso ate aqui)
+          del ${p:resource/UCDSIC_GOLDENGATE_HOME}\error_deploy.txt
+                
+        ) else (
+          echo "Falhou ao buscar ggsci.exe em: ${p:resource/UCDSIC_GOLDENGATE_HOME}\ggsci.exe"
+          exit 1
+        )
+    ) else (
+        echo "Falhou - Verifique arquivo ${p:resource/UCDSIC_GOLDENGATE_HOME}\dirprm\${p:resource/UCDSIC_GOLDENGATE_PARAM_NOME_EXTRATOR}"
+        exit 1
+    )
+) else ( 
+  echo Falhou - CYGWIN_BIN = %CYGWIN_BIN% não existe
+  exit 1
+)
